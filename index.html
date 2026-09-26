@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mi Control Financiero</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:#f4f6f8;color:#17202a}
+header{background:#17202a;color:white;padding:22px 18px}header h1{margin:0 0 5px;font-size:25px}header p{margin:0;color:#cbd5e1}
+main{max-width:1050px;margin:20px auto;padding:0 14px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{background:white;border-radius:14px;padding:18px;box-shadow:0 2px 10px #0000000d}.label{font-size:13px;color:#667085}.value{font-size:25px;font-weight:700;margin-top:7px}
+.green{color:#16834b}.red{color:#c62828}.blue{color:#2563eb}
+section{margin-top:14px}.two{display:grid;grid-template-columns:1fr 1.4fr;gap:14px}
+h2{font-size:18px;margin:0 0 14px}.form{display:grid;gap:9px}label{font-size:13px;font-weight:600}input,select,button{font:inherit;padding:10px;border:1px solid #d0d5dd;border-radius:9px}
+button{cursor:pointer;border:0;background:#17202a;color:white;font-weight:600}button.secondary{background:#e8edf2;color:#17202a}button.danger{background:#b42318}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:110px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px;border-bottom:1px solid #eee;font-size:14px}th{color:#667085;font-size:12px}
+.progress{height:9px;background:#e8edf2;border-radius:10px;overflow:hidden}.bar{height:100%;background:#2563eb}
+.budget{margin-bottom:14px}.budgettop{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.note{font-size:12px;color:#667085}.empty{text-align:center;color:#667085;padding:25px}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}
+@media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.value{font-size:20px}th,td{font-size:12px}}
+</style>
+</head>
+<body>
+<header><h1>Mi Control Financiero</h1><p>Control de ingresos, egresos, presupuesto y ahorro en Bs</p><p id="syncBadge" style="margin-top:6px;font-size:12px;color:#9fb0c3"></p></header>
+<main>
+<section class="grid">
+<div class="card"><div class="label">Saldo actual</div><div id="saldo" class="value blue">0 Bs</div></div>
+<div class="card"><div class="label">Ingresos</div><div id="ingresos" class="value green">0 Bs</div></div>
+<div class="card"><div class="label">Egresos</div><div id="egresos" class="value red">0 Bs</div></div>
+<div class="card"><div class="label">Disponible / día</div><div id="diario" class="value">0 Bs</div></div>
+</section>
+
+<section class="card">
+<h2>Sincronizar con GitHub</h2>
+<p class="note">Guarda tus datos como un archivo JSON en un repositorio tuyo. El token solo se guarda en este navegador, nunca se sube al repo.</p>
+<div class="form">
+<div class="row">
+<div><label>Usuario u organización</label><input id="ghOwner" placeholder="ej. rossel"></div>
+<div><label>Repositorio</label><input id="ghRepo" placeholder="ej. mis-finanzas"></div>
+</div>
+<div class="row">
+<div><label>Archivo</label><input id="ghPath" placeholder="finanzas.json"></div>
+<div><label>Rama</label><input id="ghBranch" placeholder="main"></div>
+</div>
+<label>Token de acceso personal (fine-grained, con permiso de Contents: Read/Write solo en ese repo)</label>
+<input type="password" id="ghToken" placeholder="ghp_...">
+<div class="row">
+<button onclick="conectarGithub()">Conectar y sincronizar</button>
+<button class="secondary" onclick="desconectarGithub()">Desconectar</button>
+</div>
+</div>
+</section>
+
+<section class="card">
+<h2>Periodo actual</h2>
+<div class="row">
+<div><label>Fecha de inicio</label><input type="date" id="inicio"></div>
+<div><label>Próximo pago</label><input type="date" id="pago"></div>
+<div><label>Meta de ahorro</label><input type="number" id="meta" min="0" step="1"></div>
+</div>
+<p class="note">El cálculo diario usa el saldo disponible y los días restantes hasta el próximo pago.</p>
+</section>
+
+<section class="two">
+<div class="card">
+<h2>Registrar movimiento</h2>
+<div class="form">
+<label>Tipo</label><select id="tipo"><option value="egreso">Egreso</option><option value="ingreso">Ingreso</option></select>
+<label>Monto (Bs)</label><input type="number" id="monto" min="0" step="0.01" placeholder="Ej. 25">
+<label>Categoría</label><select id="categoria"></select>
+<label>Descripción</label><input id="descripcion" placeholder="Ej. almuerzo">
+<label>Fecha</label><input type="date" id="fecha">
+<button onclick="agregar()">Agregar movimiento</button>
+</div>
+</div>
+<div class="card">
+<h2>Presupuesto mensual</h2>
+<div id="presupuesto"></div>
+</div>
+</section>
+
+<section class="card">
+<h2>Movimientos</h2>
+<div class="row" style="align-items:flex-end;margin-bottom:10px">
+<div><label>Desde</label><input type="date" id="filtroDesde"></div>
+<div><label>Hasta</label><input type="date" id="filtroHasta"></div>
+<div><button class="secondary" onclick="aplicarFiltro()">Filtrar</button></div>
+<div><button class="secondary" onclick="limpiarFiltro()">Ver todo</button></div>
+</div>
+<div id="resumenFiltro"></div>
+<div id="movimientos"></div>
+<div class="row" style="margin-top:12px">
+<button class="secondary" onclick="exportar()">Exportar datos</button>
+<label style="display:inline-block;padding:10px;background:#e8edf2;border-radius:9px;text-align:center;cursor:pointer">Importar datos<input type="file" accept=".json" onchange="importar(event)" style="display:none"></label>
+<button class="danger" onclick="borrarTodo()">Borrar todo</button>
+</div>
+</section>
+</main>
+<script>
+const cats=[
+["Alquiler",700],["Alimentación",750],["Transporte",300],["Gimnasio",250],
+["Necesarios",200],["Ocio",200],["Ahorro",500],["Imprevistos",400]
+];
+const key="finanzas_rossel_v1";
+let data=JSON.parse(localStorage.getItem(key)||'{"movimientos":[],"inicio":"","pago":"","meta":500}');
+let filtro={desde:"",hasta:""};
+let storageMode="local",docRef=null,saveTimer=null;
+let gh={owner:"",repo:"",path:"finanzas.json",branch:"main",token:"",sha:null};
+const $=id=>document.getElementById(id);
+function loadGhConfig(){
+try{const c=JSON.parse(localStorage.getItem("gh_config")||"null");if(c)gh={...gh,...c}}catch(e){}
+}
+function saveGhConfig(){
+localStorage.setItem("gh_config",JSON.stringify({owner:gh.owner,repo:gh.repo,path:gh.path,branch:gh.branch,token:gh.token}));
+}
+function movimientosFiltrados(){
+return data.movimientos.filter(m=>{
+if(filtro.desde&&m.fecha<filtro.desde)return false;
+if(filtro.hasta&&m.fecha>filtro.hasta)return false;
+return true
+})
+}
+function aplicarFiltro(){filtro.desde=$("filtroDesde").value;filtro.hasta=$("filtroHasta").value;render()}
+function limpiarFiltro(){filtro={desde:"",hasta:""};$("filtroDesde").value="";$("filtroHasta").value="";render()}
+async function ghGet(){
+const res=await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${encodeURIComponent(gh.path)}?ref=${encodeURIComponent(gh.branch)}`,{
+headers:{Authorization:`Bearer ${gh.token}`,Accept:"application/vnd.github+json"}
+});
+if(res.status===404){gh.sha=null;return null}
+if(!res.ok)throw new Error("GitHub respondió "+res.status);
+const j=await res.json();gh.sha=j.sha;
+return JSON.parse(decodeURIComponent(escape(atob(j.content))));
+}
+async function ghPut(payload){
+const body={message:"Actualizar datos financieros — "+new Date().toISOString(),content:btoa(unescape(encodeURIComponent(JSON.stringify(payload,null,2)))),branch:gh.branch};
+if(gh.sha)body.sha=gh.sha;
+let res=await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${encodeURIComponent(gh.path)}`,{
+method:"PUT",headers:{Authorization:`Bearer ${gh.token}`,Accept:"application/vnd.github+json","Content-Type":"application/json"},body:JSON.stringify(body)
+});
+if(res.status===409){
+await ghGet();body.sha=gh.sha;
+res=await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${encodeURIComponent(gh.path)}`,{
+method:"PUT",headers:{Authorization:`Bearer ${gh.token}`,Accept:"application/vnd.github+json","Content-Type":"application/json"},body:JSON.stringify(body)
+});
+}
+if(!res.ok){const t=await res.text();throw new Error("Error al guardar ("+res.status+"): "+t)}
+const j=await res.json();gh.sha=j.content.sha;
+}
+async function conectarGithub(){
+gh.owner=$("ghOwner").value.trim();gh.repo=$("ghRepo").value.trim();
+gh.path=$("ghPath").value.trim()||"finanzas.json";gh.branch=$("ghBranch").value.trim()||"main";
+gh.token=$("ghToken").value.trim();
+if(!gh.owner||!gh.repo||!gh.token)return alert("Completa usuario, repositorio y token.");
+try{
+const remoto=await ghGet();
+if(remoto&&confirm("Hay datos guardados en GitHub. ¿Cargarlos ahora? (Cancelar = subir los datos de este dispositivo)")){
+data=remoto;
+}else{
+await ghPut(data);
+}
+storageMode="github";saveGhConfig();actualizarBadge();render();
+alert("Conectado con GitHub. A partir de ahora tus cambios se guardan en el repositorio.");
+}catch(e){console.error(e);alert("No se pudo conectar: "+e.message)}
+}
+function desconectarGithub(){
+storageMode="local";gh.token="";saveGhConfig();actualizarBadge();
+}
+function actualizarBadge(){
+$("syncBadge").textContent=storageMode==="cloud"
+?"☁ Sincronizado con tu cuenta de Claude — abre este mismo enlace desde cualquier dispositivo"
+:storageMode==="github"
+?`🐙 Sincronizado con GitHub (${gh.owner}/${gh.repo})`
+:"💾 Guardado solo en este navegador (no se sincroniza con otros dispositivos)";
+}
+async function initStorage(){
+try{
+const dbNS=await claude.use("db");
+const userNS=await claude.use("user");
+if(dbNS&&userNS){
+const uid=await userNS.id();
+if(uid){
+docRef=dbNS.doc("data/users/"+uid+"/finanzas");
+const snap=await docRef.get();
+if(snap.exists&&snap.data()){data=snap.data()}else{await docRef.set(data)}
+storageMode="cloud";
+}
+}
+}catch(e){console.error("Nube de Claude no disponible:",e)}
+if(storageMode==="local"){
+loadGhConfig();
+if(gh.owner&&gh.repo&&gh.token){
+try{const remoto=await ghGet();if(remoto)data=remoto;storageMode="github"}
+catch(e){console.error("No se pudo sincronizar con GitHub al iniciar:",e)}
+}
+}
+setup();
+actualizarBadge();
+}
+function save(){
+localStorage.setItem(key,JSON.stringify(data));
+if(storageMode==="github"){
+clearTimeout(saveTimer);
+saveTimer=setTimeout(()=>{ghPut(data).catch(e=>console.error("Error guardando en GitHub:",e))},800);
+}else if(storageMode==="cloud"&&docRef){
+clearTimeout(saveTimer);
+saveTimer=setTimeout(()=>{docRef.set(data).catch(e=>console.error(e))},500);
+}
+render()
+}
+function money(n){return new Intl.NumberFormat("es-BO",{maximumFractionDigits:2}).format(n)+" Bs"}
+function iso(d){return d.toISOString().slice(0,10)}
+function setup(){
+$("categoria").innerHTML=cats.map(x=>`<option>${x[0]}</option>`).join("");
+const now=new Date(), next=new Date(now); next.setDate(now.getDate()+20);
+$("inicio").value=data.inicio||iso(now); $("pago").value=data.pago||iso(next);
+$("meta").value=data.meta??500; $("fecha").value=iso(now);
+["inicio","pago","meta"].forEach(id=>$(id).addEventListener("change",()=>{data[id==="meta"?"meta":id]=$(id).value;save()}));
+$("ghOwner").value=gh.owner;$("ghRepo").value=gh.repo;$("ghPath").value=gh.path;$("ghBranch").value=gh.branch;
+render()
+}
+function agregar(){
+const monto=Number($("monto").value); if(!monto||monto<0)return alert("Introduce un monto válido.");
+data.movimientos.unshift({id:Date.now(),tipo:$("tipo").value,monto,categoria:$("categoria").value,descripcion:$("descripcion").value.trim(),fecha:$("fecha").value});
+$("monto").value="";$("descripcion").value="";save();
+}
+function totals(){
+let ing=0,egr=0;data.movimientos.forEach(m=>m.tipo==="ingreso"?ing+=m.monto:egr+=m.monto);return{ing,egr,saldo:ing-egr}
+}
+function render(){
+let t=totals();$("ingresos").textContent=money(t.ing);$("egresos").textContent=money(t.egr);$("saldo").textContent=money(t.saldo);
+let days=Math.max(1,Math.ceil((new Date($("pago").value+"T23:59:59")-new Date())/86400000));
+$("diario").textContent=money(Math.max(0,t.saldo/days));
+$("presupuesto").innerHTML=cats.map(([c,b])=>{
+let used=data.movimientos.filter(m=>m.tipo==="egreso"&&m.categoria===c).reduce((a,m)=>a+m.monto,0);
+let pct=Math.min(100,used/b*100);
+return `<div class="budget"><div class="budgettop"><span>${c}</span><span>${money(used)} / ${money(b)}</span></div><div class="progress"><div class="bar" style="width:${pct}%"></div></div></div>`
+}).join("");
+const lista=movimientosFiltrados();
+if(filtro.desde||filtro.hasta){
+let fi=0,fe=0;lista.forEach(m=>m.tipo==="ingreso"?fi+=m.monto:fe+=m.monto);
+$("resumenFiltro").innerHTML=`<p class="note">Periodo filtrado: ingresos ${money(fi)} · egresos ${money(fe)} · ${lista.length} movimiento(s)</p>`;
+}else{$("resumenFiltro").innerHTML=""}
+if(!lista.length){$("movimientos").innerHTML='<div class="empty">No hay movimientos en este rango.</div>';return}
+$("movimientos").innerHTML=`<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Descripción</th><th>Monto</th><th></th></tr></thead><tbody>${
+lista.map(m=>`<tr><td>${m.fecha}</td><td>${m.tipo==="ingreso"?"Ingreso":"Egreso"}</td><td>${m.categoria}</td><td>${m.descripcion||"-"}</td><td class="${m.tipo==="ingreso"?"green":"red"}">${m.tipo==="ingreso"?"+":"-"}${money(m.monto)}</td><td><button class="danger" style="padding:5px 8px" onclick="eliminar(${m.id})">×</button></td></tr>`).join("")
+}</tbody></table>`
+}
+function eliminar(id){data.movimientos=data.movimientos.filter(m=>m.id!==id);save()}
+function borrarTodo(){if(confirm("¿Borrar todos los movimientos y configuraciones?")){localStorage.removeItem(key);location.reload()}}
+function exportar(){
+const activo=filtro.desde||filtro.hasta;
+const payload=activo?{...data,movimientos:movimientosFiltrados(),rango:filtro}:data;
+const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+a.download=activo?`movimientos_${filtro.desde||"inicio"}_a_${filtro.hasta||"hoy"}.json`:"mis-finanzas.json";
+a.click()
+}
+function importar(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{data=JSON.parse(r.result);save()}catch{alert("Archivo inválido")}};r.readAsText(f)}
+initStorage();
+</script>
+</body>
+</html>
